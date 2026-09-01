@@ -1,7 +1,7 @@
 # FPGA 行情卡（md-card）— M0–M9
 
 热路径：`udp_strip` → Binary/`dec_sse_fast` → `arb_nway` → `event_merge` → `sym_cam` → `mcast_eng` + `dma_pack`。  
-仿真：Verilator ≥ 5.036 + cocotb。**不要**改 `rtl/md_pkg.sv` 的 packed 布局。无 TCP。
+仿真：默认 **QuestaSim**（`SIM=questa`）+ cocotb；也可 `SIM=verilator`（需 Verilator ≥ 5.036）。**不要**改 `rtl/md_pkg.sv` 的 packed 布局。无 TCP。
 
 ## 仿真
 
@@ -10,12 +10,13 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-make sim            # 全套（含 top）
+make sim            # 全套（含 top），默认 QuestaSim
 make sim-dec-fast   # 仅 dec_sse_fast
 make sim-top        # md_rx_top 集成
+make SIM=verilator sim
 ```
 
-波形：`make sim WAVES=1`（FST）。
+波形：`make sim WAVES=1`（Questa 出 WLF，Verilator 出 FST）。
 
 ## SSE 口 Binary vs FAST
 

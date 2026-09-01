@@ -316,10 +316,12 @@ async def test_szse_ab_dedup_one_dma(dut):
     frame = build_udp_frame(payload)
     ts = 0x1111
 
+    # CAM lookup is 2 cycles: DMA may start during the second ingress frame.
+    recv = cocotb.start_soon(recv_dma_event(dut, timeout_cycles=3000))
     await axis_send_port(dut, 2, frame, pack_eth_tuser(2, ts))
     await axis_send_port(dut, 3, frame, pack_eth_tuser(3, ts + 1))
 
-    ev_raw = await recv_dma_event(dut, timeout_cycles=3000)
+    ev_raw = await recv
     ev = unpack_event_t(ev_raw)
     assert ev["exch"] == EXCH_SZSE, ev
     assert ev["ch"] == CH_ORDER, ev
@@ -354,8 +356,9 @@ async def test_sse_port0_dma_exch(dut):
     frame = build_udp_frame(payload)
     ts = 0x2222
 
+    recv = cocotb.start_soon(recv_dma_event(dut, timeout_cycles=3000))
     await axis_send_port(dut, 0, frame, pack_eth_tuser(0, ts))
-    ev_raw = await recv_dma_event(dut, timeout_cycles=3000)
+    ev_raw = await recv
     ev = unpack_event_t(ev_raw)
     assert ev["exch"] == EXCH_SSE, ev
     assert ev["ch"] == CH_ORDER, ev
@@ -415,8 +418,9 @@ async def test_sse_fast_port0_cfg(dut):
     payload = build_synth_fast(pmap, CODE_STR, seq, px, qty)
     frame = build_udp_frame(payload)
 
+    recv = cocotb.start_soon(recv_dma_event(dut, timeout_cycles=3000))
     await axis_send_port(dut, 0, frame, pack_eth_tuser(0, ts))
-    ev_raw = await recv_dma_event(dut, timeout_cycles=3000)
+    ev_raw = await recv
     ev = unpack_event_t(ev_raw)
     assert ev["exch"] == EXCH_SSE, ev
     assert ev["ch"] == CH_SNAP, ev

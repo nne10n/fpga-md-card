@@ -20,3 +20,9 @@ dump.fst
 tb/__pycache__/
 *.xml
 .cache/
+modelsim.ini
+transcript
+vsim.wlf
+*.wlf
+*.mti
+*.mpf

@@ -139,51 +139,81 @@ module md_rx_top
   logic [31:0] st_opt  [0:3];
   logic [31:0] st_filt [0:3];
 
-  // Force port_id in tuser at strip input (TB may set any; top overrides)
-  eth_tuser_t s0_tu_fix, s1_tu_fix, s2_tu_fix, s3_tu_fix;
+  logic [63:0] sin_tdata  [0:3];
+  logic [7:0]  sin_tkeep  [0:3];
+  logic        sin_tvalid [0:3];
+  logic        sin_tlast  [0:3];
+  logic        sin_tready [0:3];
+  eth_tuser_t  sin_tuser  [0:3];
+  eth_tuser_t  sin_tu_fix [0:3];
+
+  assign sin_tdata[0]  = s0_tdata;
+  assign sin_tkeep[0]  = s0_tkeep;
+  assign sin_tvalid[0] = s0_tvalid;
+  assign sin_tlast[0]  = s0_tlast;
+  assign s0_tready     = sin_tready[0];
+  assign sin_tuser[0]  = s0_tuser;
+
+  assign sin_tdata[1]  = s1_tdata;
+  assign sin_tkeep[1]  = s1_tkeep;
+  assign sin_tvalid[1] = s1_tvalid;
+  assign sin_tlast[1]  = s1_tlast;
+  assign s1_tready     = sin_tready[1];
+  assign sin_tuser[1]  = s1_tuser;
+
+  assign sin_tdata[2]  = s2_tdata;
+  assign sin_tkeep[2]  = s2_tkeep;
+  assign sin_tvalid[2] = s2_tvalid;
+  assign sin_tlast[2]  = s2_tlast;
+  assign s2_tready     = sin_tready[2];
+  assign sin_tuser[2]  = s2_tuser;
+
+  assign sin_tdata[3]  = s3_tdata;
+  assign sin_tkeep[3]  = s3_tkeep;
+  assign sin_tvalid[3] = s3_tvalid;
+  assign sin_tlast[3]  = s3_tlast;
+  assign s3_tready     = sin_tready[3];
+  assign sin_tuser[3]  = s3_tuser;
+
   always_comb begin
-    s0_tu_fix = s0_tuser; s0_tu_fix.port_id = 3'(P_SSE_A);
-    s1_tu_fix = s1_tuser; s1_tu_fix.port_id = 3'(P_SSE_B);
-    s2_tu_fix = s2_tuser; s2_tu_fix.port_id = 3'(P_SZSE_A);
-    s3_tu_fix = s3_tuser; s3_tu_fix.port_id = 3'(P_SZSE_B);
+    sin_tu_fix[0] = sin_tuser[0];
+    sin_tu_fix[0].port_id = 3'(P_SSE_A);
+    sin_tu_fix[1] = sin_tuser[1];
+    sin_tu_fix[1].port_id = 3'(P_SSE_B);
+    sin_tu_fix[2] = sin_tuser[2];
+    sin_tu_fix[2].port_id = 3'(P_SZSE_A);
+    sin_tu_fix[3] = sin_tuser[3];
+    sin_tu_fix[3].port_id = 3'(P_SZSE_B);
   end
 
-  udp_strip u_strip0 (
-    .clk(clk), .rst_n(rst_n),
-    .cfg_dst_mac(cfg_dst_mac), .cfg_dst_ip(cfg_dst_ip), .cfg_udp_dport(cfg_udp_dport),
-    .s_axis_tdata(s0_tdata), .s_axis_tkeep(s0_tkeep), .s_axis_tvalid(s0_tvalid),
-    .s_axis_tlast(s0_tlast), .s_axis_tready(s0_tready), .s_axis_tuser(s0_tu_fix),
-    .m_axis_tdata(pay_tdata[0]), .m_axis_tkeep(pay_tkeep[0]), .m_axis_tvalid(pay_tvalid[0]),
-    .m_axis_tlast(pay_tlast[0]), .m_axis_tready(pay_tready[0]), .m_axis_tuser(pay_tuser[0]),
-    .drop_not_udp(st_nudp[0]), .drop_opt(st_opt[0]), .drop_filter(st_filt[0]), .frames_ok(st_ok[0])
-  );
-  udp_strip u_strip1 (
-    .clk(clk), .rst_n(rst_n),
-    .cfg_dst_mac(cfg_dst_mac), .cfg_dst_ip(cfg_dst_ip), .cfg_udp_dport(cfg_udp_dport),
-    .s_axis_tdata(s1_tdata), .s_axis_tkeep(s1_tkeep), .s_axis_tvalid(s1_tvalid),
-    .s_axis_tlast(s1_tlast), .s_axis_tready(s1_tready), .s_axis_tuser(s1_tu_fix),
-    .m_axis_tdata(pay_tdata[1]), .m_axis_tkeep(pay_tkeep[1]), .m_axis_tvalid(pay_tvalid[1]),
-    .m_axis_tlast(pay_tlast[1]), .m_axis_tready(pay_tready[1]), .m_axis_tuser(pay_tuser[1]),
-    .drop_not_udp(st_nudp[1]), .drop_opt(st_opt[1]), .drop_filter(st_filt[1]), .frames_ok(st_ok[1])
-  );
-  udp_strip u_strip2 (
-    .clk(clk), .rst_n(rst_n),
-    .cfg_dst_mac(cfg_dst_mac), .cfg_dst_ip(cfg_dst_ip), .cfg_udp_dport(cfg_udp_dport),
-    .s_axis_tdata(s2_tdata), .s_axis_tkeep(s2_tkeep), .s_axis_tvalid(s2_tvalid),
-    .s_axis_tlast(s2_tlast), .s_axis_tready(s2_tready), .s_axis_tuser(s2_tu_fix),
-    .m_axis_tdata(pay_tdata[2]), .m_axis_tkeep(pay_tkeep[2]), .m_axis_tvalid(pay_tvalid[2]),
-    .m_axis_tlast(pay_tlast[2]), .m_axis_tready(pay_tready[2]), .m_axis_tuser(pay_tuser[2]),
-    .drop_not_udp(st_nudp[2]), .drop_opt(st_opt[2]), .drop_filter(st_filt[2]), .frames_ok(st_ok[2])
-  );
-  udp_strip u_strip3 (
-    .clk(clk), .rst_n(rst_n),
-    .cfg_dst_mac(cfg_dst_mac), .cfg_dst_ip(cfg_dst_ip), .cfg_udp_dport(cfg_udp_dport),
-    .s_axis_tdata(s3_tdata), .s_axis_tkeep(s3_tkeep), .s_axis_tvalid(s3_tvalid),
-    .s_axis_tlast(s3_tlast), .s_axis_tready(s3_tready), .s_axis_tuser(s3_tu_fix),
-    .m_axis_tdata(pay_tdata[3]), .m_axis_tkeep(pay_tkeep[3]), .m_axis_tvalid(pay_tvalid[3]),
-    .m_axis_tlast(pay_tlast[3]), .m_axis_tready(pay_tready[3]), .m_axis_tuser(pay_tuser[3]),
-    .drop_not_udp(st_nudp[3]), .drop_opt(st_opt[3]), .drop_filter(st_filt[3]), .frames_ok(st_ok[3])
-  );
+  genvar gi;
+  generate
+    for (gi = 0; gi < 4; gi++) begin : g_strip
+      udp_strip u_strip (
+        .clk          (clk),
+        .rst_n        (rst_n),
+        .cfg_dst_mac  (cfg_dst_mac),
+        .cfg_dst_ip   (cfg_dst_ip),
+        .cfg_udp_dport(cfg_udp_dport),
+        .s_axis_tdata (sin_tdata[gi]),
+        .s_axis_tkeep (sin_tkeep[gi]),
+        .s_axis_tvalid(sin_tvalid[gi]),
+        .s_axis_tlast (sin_tlast[gi]),
+        .s_axis_tready(sin_tready[gi]),
+        .s_axis_tuser (sin_tu_fix[gi]),
+        .m_axis_tdata (pay_tdata[gi]),
+        .m_axis_tkeep (pay_tkeep[gi]),
+        .m_axis_tvalid(pay_tvalid[gi]),
+        .m_axis_tlast (pay_tlast[gi]),
+        .m_axis_tready(pay_tready[gi]),
+        .m_axis_tuser (pay_tuser[gi]),
+        .drop_not_udp (st_nudp[gi]),
+        .drop_opt     (st_opt[gi]),
+        .drop_filter  (st_filt[gi]),
+        .frames_ok    (st_ok[gi])
+      );
+    end
+  endgenerate
 
   // =========================================================================
   // Decoders: 0/1 SSE, 2/3 SZSE
