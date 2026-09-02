@@ -6,14 +6,23 @@ from __future__ import annotations
 from cocotb.triggers import RisingEdge
 
 
+def _sig(dut, *names):
+    """First matching DUT handle (house-rule i_/o_ names, then legacy s_axis_/m_axis_)."""
+    for n in names:
+        h = getattr(dut, n, None)
+        if h is not None:
+            return h
+    raise AttributeError(f"DUT has none of {names}")
+
+
 async def reset_dut(dut, cycles: int = 5):
     dut.rst_n.value = 0
-    dut.s_axis_tdata.value = 0
-    dut.s_axis_tkeep.value = 0
-    dut.s_axis_tvalid.value = 0
-    dut.s_axis_tlast.value = 0
-    dut.s_axis_tuser.value = 0
-    dut.m_axis_tready.value = 1
+    _sig(dut, "i_s_tdata", "s_axis_tdata").value = 0
+    _sig(dut, "i_s_tkeep", "s_axis_tkeep").value = 0
+    _sig(dut, "i_s_tvalid", "s_axis_tvalid").value = 0
+    _sig(dut, "i_s_tlast", "s_axis_tlast").value = 0
+    _sig(dut, "i_s_tuser", "s_axis_tuser").value = 0
+    _sig(dut, "i_m_tready", "m_axis_tready").value = 1
     for _ in range(cycles):
         await RisingEdge(dut.clk)
     dut.rst_n.value = 1
@@ -53,24 +62,24 @@ async def axis_send_frame(dut, frame: bytes, tuser: int = 0, probe_tready=None):
         for b_i, b in enumerate(chunk):
             data |= (b & 0xFF) << (8 * b_i)
             keep |= 1 << b_i
-        dut.s_axis_tdata.value = data
-        dut.s_axis_tkeep.value = keep
-        dut.s_axis_tvalid.value = 1
-        dut.s_axis_tlast.value = 1 if (i + len(chunk) >= n) else 0
+        _sig(dut, "i_s_tdata", "s_axis_tdata").value = data
+        _sig(dut, "i_s_tkeep", "s_axis_tkeep").value = keep
+        _sig(dut, "i_s_tvalid", "s_axis_tvalid").value = 1
+        _sig(dut, "i_s_tlast", "s_axis_tlast").value = 1 if (i + len(chunk) >= n) else 0
         if first:
-            dut.s_axis_tuser.value = tuser
+            _sig(dut, "i_s_tuser", "s_axis_tuser").value = tuser
             first = False
         while True:
             await RisingEdge(dut.clk)
-            rdy = int(dut.s_axis_tready.value)
+            rdy = int(_sig(dut, "o_s_tready", "s_axis_tready").value)
             if probe_tready is not None:
                 probe_tready.append(rdy)
             if rdy == 1:
                 break
         i += len(chunk)
-    dut.s_axis_tvalid.value = 0
-    dut.s_axis_tlast.value = 0
-    dut.s_axis_tkeep.value = 0
+    _sig(dut, "i_s_tvalid", "s_axis_tvalid").value = 0
+    _sig(dut, "i_s_tlast", "s_axis_tlast").value = 0
+    _sig(dut, "i_s_tkeep", "s_axis_tkeep").value = 0
 
 
 async def axis_recv_frame(dut, timeout_cycles: int = 5000) -> tuple[bytes, int]:
@@ -82,11 +91,13 @@ async def axis_recv_frame(dut, timeout_cycles: int = 5000) -> tuple[bytes, int]:
     while cycles < timeout_cycles:
         await RisingEdge(dut.clk)
         cycles += 1
-        if int(dut.m_axis_tvalid.value) == 1 and int(dut.m_axis_tready.value) == 1:
-            data = int(dut.m_axis_tdata.value)
-            keep = int(dut.m_axis_tkeep.value)
-            last = int(dut.m_axis_tlast.value)
-            tuser = int(dut.m_axis_tuser.value)
+        if int(_sig(dut, "o_m_tvalid", "m_axis_tvalid").value) == 1 and int(
+            _sig(dut, "i_m_tready", "m_axis_tready").value
+        ) == 1:
+            data = int(_sig(dut, "o_m_tdata", "m_axis_tdata").value)
+            keep = int(_sig(dut, "o_m_tkeep", "m_axis_tkeep").value)
+            last = int(_sig(dut, "o_m_tlast", "m_axis_tlast").value)
+            tuser = int(_sig(dut, "o_m_tuser", "m_axis_tuser").value)
             for b_i in range(8):
                 if keep & (1 << b_i):
                     buf.append((data >> (8 * b_i)) & 0xFF)
@@ -102,6 +113,6 @@ async def axis_expect_idle(dut, cycles: int = 20) -> bool:
     """Return True if m_axis_tvalid stayed 0 for `cycles` clocks."""
     for _ in range(cycles):
         await RisingEdge(dut.clk)
-        if int(dut.m_axis_tvalid.value) == 1:
+        if int(_sig(dut, "o_m_tvalid", "m_axis_tvalid").value) == 1:
             return False
     return True

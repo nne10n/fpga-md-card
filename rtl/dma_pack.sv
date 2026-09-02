@@ -51,7 +51,7 @@ module dma_pack
   // Event FIFO (simple sync circular buffer). Head peeked while streaming;
   // pop on last-beat handshake so capacity is exactly DEPTH while paused.
   // -------------------------------------------------------------------------
-  (* RAM_STYLE = "block" *) logic [511:0] mem_q [0:DEPTH-1];
+  logic [511:0] mem_q [0:DEPTH-1];
   logic [PTR_W-1:0] wr_q, rd_q;
   logic [PTR_W:0]   count_q; // 0..32
   logic [2:0]       beat_q;
@@ -73,6 +73,7 @@ module dma_pack
   assign tx_ok     = c_tx_q;
   assign drop_full = c_drop_q;
 
+  integer i;
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       wr_q     <= '0;
@@ -81,6 +82,8 @@ module dma_pack
       beat_q   <= 3'd0;
       c_tx_q   <= 32'd0;
       c_drop_q <= 32'd0;
+      for (i = 0; i < DEPTH; i = i + 1)
+        mem_q[i] <= '0;
     end else begin
       logic [PTR_W:0] c_next;
       c_next = count_q;

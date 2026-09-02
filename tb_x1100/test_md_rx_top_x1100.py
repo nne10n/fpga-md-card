@@ -1,25 +1,31 @@
 #!/usr/bin/env python3
-"""cocotb integration tests for md_rx_top (M8)."""
+"""cocotb integration tests for md_rx_top_x1100 (32-bit AXIS A/B SZSE)."""
 
 from __future__ import annotations
 
 import struct
+import sys
+from pathlib import Path
 
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge
 
-from event_util import (
+# Reuse event helpers from existing tb/
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tb"))
+from event_util import (  # noqa: E402
     CH_ORDER,
     CH_OTHER,
     CH_SNAP,
     CH_TRADE,
-    EXCH_SSE,
     EXCH_SZSE,
     unpack_event_t,
 )
 
-# Multicast / strip defaults (match test_udp_strip)
+# AXIS width for X1100
+DATA_W = 32
+KEEP_W = DATA_W // 8  # 4
+
 DST_MAC_MCAST = bytes.fromhex("01005e000001")
 SRC_MAC = bytes.fromhex("001122334455")
 DST_IP = bytes.fromhex("ef010101")
@@ -29,7 +35,6 @@ UDP_SPORT = 0xC000
 CFG_MAC = int.from_bytes(DST_MAC_MCAST, "big")
 CFG_IP = int.from_bytes(DST_IP, "big")
 
-# §6 synthetic offsets
 OFF_TYPE = 0
 OFF_SEQ = 4
 OFF_CODE = 8
@@ -146,18 +151,20 @@ def _ctr(dut, name: str) -> int:
     return int(getattr(dut, name).value)
 
 
-async def axis_send_port(dut, port: int, frame: bytes, tuser: int = 0):
+async def axis_send_port32(dut, port: str, frame: bytes, tuser: int = 0):
+    """Drive eth frame on s_axis_{a|b}_* with 32-bit beats (byte0 = tdata[7:0])."""
+    prefix = f"s_axis_{port}"
+    tdata = getattr(dut, f"{prefix}_tdata")
+    tkeep = getattr(dut, f"{prefix}_tkeep")
+    tvalid = getattr(dut, f"{prefix}_tvalid")
+    tlast = getattr(dut, f"{prefix}_tlast")
+    tready = getattr(dut, f"{prefix}_tready")
+    tuser_p = getattr(dut, f"{prefix}_tuser")
     i = 0
     n = len(frame)
     first = True
-    tdata = getattr(dut, f"s{port}_tdata")
-    tkeep = getattr(dut, f"s{port}_tkeep")
-    tvalid = getattr(dut, f"s{port}_tvalid")
-    tlast = getattr(dut, f"s{port}_tlast")
-    tready = getattr(dut, f"s{port}_tready")
-    tuser_p = getattr(dut, f"s{port}_tuser")
     while i < n:
-        chunk = frame[i : i + 8]
+        chunk = frame[i : i + KEEP_W]
         data = 0
         keep = 0
         for b_i, b in enumerate(chunk):
@@ -180,7 +187,7 @@ async def axis_send_port(dut, port: int, frame: bytes, tuser: int = 0):
     tkeep.value = 0
 
 
-async def recv_dma_event(dut, timeout_cycles: int = 2000) -> int:
+async def recv_dma_event(dut, timeout_cycles: int = 4000) -> int:
     beats = []
     for _ in range(timeout_cycles):
         await RisingEdge(dut.clk)
@@ -195,7 +202,7 @@ async def recv_dma_event(dut, timeout_cycles: int = 2000) -> int:
     raise TimeoutError("no dma event")
 
 
-async def expect_no_dma(dut, cycles: int = 80) -> bool:
+async def expect_no_dma(dut, cycles: int = 120) -> bool:
     for _ in range(cycles):
         await RisingEdge(dut.clk)
         if int(dut.m_dma_tvalid.value) == 1:
@@ -223,20 +230,26 @@ async def cam_swap(dut):
 
 async def reset_top(dut, cycles: int = 5):
     dut.rst_n.value = 0
-    for p in range(4):
-        getattr(dut, f"s{p}_tdata").value = 0
-        getattr(dut, f"s{p}_tkeep").value = 0
-        getattr(dut, f"s{p}_tvalid").value = 0
-        getattr(dut, f"s{p}_tlast").value = 0
-        getattr(dut, f"s{p}_tuser").value = 0
+    for port in ("a", "b"):
+        getattr(dut, f"s_axis_{port}_tdata").value = 0
+        getattr(dut, f"s_axis_{port}_tkeep").value = 0
+        getattr(dut, f"s_axis_{port}_tvalid").value = 0
+        getattr(dut, f"s_axis_{port}_tlast").value = 0
+        getattr(dut, f"s_axis_{port}_tuser").value = 0
     dut.m_mcast_tready.value = 1
     dut.m_dma_tready.value = 1
+    dut.m_book_tready.value = 1
     dut.cam_we.value = 0
     dut.cam_swap.value = 0
     dut.cam_addr.value = 0
     dut.cam_key.value = 0
     dut.cam_id.value = 0
     dut.cam_entry_valid.value = 0
+    dut.hot_we.value = 0
+    dut.hot_addr.value = 0
+    dut.hot_code.value = 0
+    dut.hot_entry_valid.value = 0
+    dut.book_clear.value = 0
     dut.filt_we.value = 0
     dut.filt_addr.value = 0
     dut.filt_bit.value = 0
@@ -253,19 +266,17 @@ async def _apply_cfg(dut):
     dut.cfg_udp_dport.value = UDP_DPORT
 
     lut = default_type_lut()
-    for prefix in ("cfg_szse", "cfg_sse"):
-        getattr(dut, f"{prefix}_off_type").value = OFF_TYPE
-        getattr(dut, f"{prefix}_off_seq").value = OFF_SEQ
-        getattr(dut, f"{prefix}_off_code").value = OFF_CODE
-        getattr(dut, f"{prefix}_off_px").value = OFF_PX
-        getattr(dut, f"{prefix}_off_qty").value = OFF_QTY
-        getattr(dut, f"{prefix}_off_side").value = OFF_SIDE
-        getattr(dut, f"{prefix}_off_oid").value = OFF_OID
-        getattr(dut, f"{prefix}_len_hdr").value = LEN_HDR
-        getattr(dut, f"{prefix}_type_lut").value = lut
-        getattr(dut, f"{prefix}_off_ch_hint").value = OFF_CH_HINT
+    dut.cfg_szse_off_type.value = OFF_TYPE
+    dut.cfg_szse_off_seq.value = OFF_SEQ
+    dut.cfg_szse_off_code.value = OFF_CODE
+    dut.cfg_szse_off_px.value = OFF_PX
+    dut.cfg_szse_off_qty.value = OFF_QTY
+    dut.cfg_szse_off_side.value = OFF_SIDE
+    dut.cfg_szse_off_oid.value = OFF_OID
+    dut.cfg_szse_len_hdr.value = LEN_HDR
+    dut.cfg_szse_type_lut.value = lut
+    dut.cfg_szse_off_ch_hint.value = OFF_CH_HINT
 
-    dut.cfg_sse_is_fast.value = 0  # Binary default; FAST via dedicated test
     dut.cfg_pass_miss.value = 0
     dut.cfg_mcast_src_mac.value = 0x001122334455
     dut.cfg_mcast_dst_mac.value = CFG_MAC
@@ -301,8 +312,8 @@ async def _init(dut):
 
 
 @cocotb.test()
-async def test_szse_ab_dedup_one_dma(dut):
-    """Identical SZSE ORDER on port2 and port3 → exactly one DMA event; B dropped."""
+async def test_x1100_ab_dedup_one_dma(dut):
+    """Identical SZSE ORDER on A then B → exactly one DMA event; B dropped."""
     await _init(dut)
     await preload_cam(dut, EXCH_SZSE, CODE_STR, SYM_ID)
     await enable_filt(dut, SYM_ID)
@@ -316,10 +327,17 @@ async def test_szse_ab_dedup_one_dma(dut):
     frame = build_udp_frame(payload)
     ts = 0x1111
 
-    await axis_send_port(dut, 2, frame, pack_eth_tuser(2, ts))
-    await axis_send_port(dut, 3, frame, pack_eth_tuser(3, ts + 1))
+    # Hold DMA ready low while both frames stream in — 32b beats take long
+    # enough that dma_pack would otherwise drain before recv starts.
+    dut.m_dma_tready.value = 0
+    await axis_send_port32(dut, "a", frame, pack_eth_tuser(0, ts))
+    await axis_send_port32(dut, "b", frame, pack_eth_tuser(1, ts + 1))
+    # Allow pipeline to settle, then release DMA
+    for _ in range(40):
+        await RisingEdge(dut.clk)
+    dut.m_dma_tready.value = 1
 
-    ev_raw = await recv_dma_event(dut, timeout_cycles=3000)
+    ev_raw = await recv_dma_event(dut, timeout_cycles=5000)
     ev = unpack_event_t(ev_raw)
     assert ev["exch"] == EXCH_SZSE, ev
     assert ev["ch"] == CH_ORDER, ev
@@ -329,7 +347,7 @@ async def test_szse_ab_dedup_one_dma(dut):
     assert ev["symbol_id"] == SYM_ID, ev
     assert ev["ts_ns"] == ts, ev
 
-    idle = await expect_no_dma(dut, 120)
+    idle = await expect_no_dma(dut, 160)
     assert idle, "duplicate B leaked to DMA"
 
     await RisingEdge(dut.clk)
@@ -341,10 +359,10 @@ async def test_szse_ab_dedup_one_dma(dut):
 
 
 @cocotb.test()
-async def test_sse_port0_dma_exch(dut):
-    """SSE port0 alone → one DMA event with EXCH_SSE and CAM hit."""
+async def test_x1100_a_cam_hit_dma(dut):
+    """Single A with CAM hit → one DMA event EXCH_SZSE."""
     await _init(dut)
-    await preload_cam(dut, EXCH_SSE, CODE_STR, SYM_ID)
+    await preload_cam(dut, EXCH_SZSE, CODE_STR, SYM_ID)
     await enable_filt(dut, SYM_ID)
 
     seq = 7
@@ -354,10 +372,10 @@ async def test_sse_port0_dma_exch(dut):
     frame = build_udp_frame(payload)
     ts = 0x2222
 
-    await axis_send_port(dut, 0, frame, pack_eth_tuser(0, ts))
-    ev_raw = await recv_dma_event(dut, timeout_cycles=3000)
+    await axis_send_port32(dut, "a", frame, pack_eth_tuser(0, ts))
+    ev_raw = await recv_dma_event(dut, timeout_cycles=5000)
     ev = unpack_event_t(ev_raw)
-    assert ev["exch"] == EXCH_SSE, ev
+    assert ev["exch"] == EXCH_SZSE, ev
     assert ev["ch"] == CH_ORDER, ev
     assert ev["seq"] == seq, ev
     assert ev["px"] == px, ev
@@ -371,64 +389,16 @@ async def test_sse_port0_dma_exch(dut):
 
 
 @cocotb.test()
-async def test_szse_cam_miss_drop(dut):
-    """SZSE ORDER without CAM preload → no DMA (cfg_pass_miss=0)."""
+async def test_x1100_cam_miss_drop(dut):
+    """A ORDER without CAM preload → no DMA (cfg_pass_miss=0)."""
     await _init(dut)
     await enable_filt(dut, SYM_ID)
 
     payload = build_synth_bin(2, 1, CODE_STR, 1, 1, 1, 1)
     frame = build_udp_frame(payload)
-    await axis_send_port(dut, 2, frame, pack_eth_tuser(2, 0x3333))
-    idle = await expect_no_dma(dut, 200)
+    await axis_send_port32(dut, "a", frame, pack_eth_tuser(0, 0x3333))
+    idle = await expect_no_dma(dut, 250)
     assert idle, "miss should drop"
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     assert _ctr(dut, "telem_cam_miss") >= 1
-
-
-def build_synth_fast(pmap: int, code: str, seq: int, px: int, qty: int) -> bytes:
-    code_b = code.encode("ascii")[:6].ljust(6, b" ")
-    return (
-        struct.pack("!B", pmap & 0xFF)
-        + code_b
-        + struct.pack("!I", seq & 0xFFFFFFFF)
-        + struct.pack("!Q", px & ((1 << 64) - 1))
-        + struct.pack("!I", qty & 0xFFFFFFFF)
-    )
-
-
-@cocotb.test()
-async def test_sse_fast_port0_cfg(dut):
-    """cfg_sse_is_fast=1 on port0 → FAST template → one DMA event EXCH_SSE/CH_SNAP."""
-    await _init(dut)
-    dut.cfg_sse_is_fast.value = 1
-    await RisingEdge(dut.clk)
-
-    await preload_cam(dut, EXCH_SSE, CODE_STR, SYM_ID)
-    await enable_filt(dut, SYM_ID)
-
-    pmap = 0x11
-    seq = 42
-    px = 0x123456789ABCDEF0
-    qty = 777
-    ts = 0xF001
-    payload = build_synth_fast(pmap, CODE_STR, seq, px, qty)
-    frame = build_udp_frame(payload)
-
-    await axis_send_port(dut, 0, frame, pack_eth_tuser(0, ts))
-    ev_raw = await recv_dma_event(dut, timeout_cycles=3000)
-    ev = unpack_event_t(ev_raw)
-    assert ev["exch"] == EXCH_SSE, ev
-    assert ev["ch"] == CH_SNAP, ev
-    assert ev["seq"] == seq, ev
-    assert ev["px"] == px, ev
-    assert ev["qty"] == qty, ev
-    assert ev["msg_type"] == (pmap & 0xFF), ev
-    assert ev["symbol_id"] == SYM_ID, ev
-    assert ev["ts_ns"] == ts, ev
-
-    await RisingEdge(dut.clk)
-    await RisingEdge(dut.clk)
-    assert _ctr(dut, "telem_dma_tx") >= 1
-    assert _ctr(dut, "telem_cam_hit") >= 1
-    assert _ctr(dut, "telem_msg_ok") >= 1

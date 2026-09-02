@@ -98,11 +98,13 @@ module mcast_eng
   // -------------------------------------------------------------------------
   // Symbol enable bitmap
   // -------------------------------------------------------------------------
-  (* RAM_STYLE = "distributed" *) logic [CAM_DEPTH-1:0] filt_q;
+  logic filt_q [0:CAM_DEPTH-1];
 
+  integer fi;
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-      filt_q <= {CAM_DEPTH{1'b0}};
+      for (fi = 0; fi < CAM_DEPTH; fi = fi + 1)
+        filt_q[fi] <= 1'b0;
     end else if (filt_we) begin
       filt_q[filt_addr] <= filt_bit;
     end
@@ -191,7 +193,7 @@ module mcast_eng
       c_tx_q   <= 32'd0;
       c_filt_q <= 32'd0;
       c_rate_q <= 32'd0;
-      for (int fi = 0; fi < N_BEATS; fi = fi + 1) begin
+      for (fi = 0; fi < N_BEATS; fi = fi + 1) begin
         frame_q[fi] <= 64'd0;
         keep_q[fi]  <= 8'd0;
       end

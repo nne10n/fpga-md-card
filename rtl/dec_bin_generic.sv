@@ -9,6 +9,7 @@
 // m_code[47:0] (char0 in [7:0]) registered with m_event_tvalid for sym_cam.
 // symbol_id stays 0 until sym_cam. ch := cfg_type_lut[msg_type[3:0]].
 // body_len on the wire is ignored; extraction uses fixed offsets + cfg_len_hdr.
+// DATA_W = 32|64 (default 64). KEEP_W = DATA_W/8.
 // -----------------------------------------------------------------------------
 `timescale 1ns / 1ps
 
@@ -16,7 +17,9 @@ module dec_bin_generic
   import md_pkg::*;
 #(
   parameter exch_e CFG_EXCH  = EXCH_SZSE,
-  parameter int    BUF_BYTES = 256
+  parameter int    BUF_BYTES = 256,
+  parameter int    DATA_W    = 64,
+  parameter int    KEEP_W    = DATA_W / 8
 ) (
   input  logic         clk,
   input  logic         rst_n,
@@ -32,12 +35,12 @@ module dec_bin_generic
   input  logic [63:0]  cfg_type_lut,     // 16 x 4-bit ch_e; index = msg_type[3:0]
   input  logic [7:0]   cfg_off_ch_hint,  // optional; ignored for ch in v1
 
-  input  logic [63:0]  s_axis_tdata,
-  input  logic [7:0]   s_axis_tkeep,
-  input  logic         s_axis_tvalid,
-  input  logic         s_axis_tlast,
-  output logic         s_axis_tready,
-  input  pay_tuser_t   s_axis_tuser,
+  input  logic [DATA_W-1:0] s_axis_tdata,
+  input  logic [KEEP_W-1:0] s_axis_tkeep,
+  input  logic              s_axis_tvalid,
+  input  logic              s_axis_tlast,
+  output logic              s_axis_tready,
+  input  pay_tuser_t        s_axis_tuser,
 
   output logic [511:0] m_event_tdata,
   output logic         m_event_tvalid,
@@ -196,7 +199,7 @@ module dec_bin_generic
             tuser_q <= s_axis_tuser;
             n  = 9'd0;
             ov = 1'b0;
-            for (bi = 0; bi < 8; bi++) begin
+            for (bi = 0; bi < KEEP_W; bi++) begin
               if (s_axis_tkeep[bi]) begin
                 if (n < BUF_MAX[8:0]) begin
                   mem_tmp[n] = s_axis_tdata[8*bi +: 8];
@@ -228,7 +231,7 @@ module dec_bin_generic
             tu_use = tuser_q;
             n  = len_q;
             ov = ovf_q;
-            for (bi = 0; bi < 8; bi++) begin
+            for (bi = 0; bi < KEEP_W; bi++) begin
               if (s_axis_tkeep[bi]) begin
                 if (n < BUF_MAX[8:0]) begin
                   mem_tmp[n] = s_axis_tdata[8*bi +: 8];

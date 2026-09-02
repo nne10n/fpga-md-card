@@ -1,12 +1,16 @@
 // -----------------------------------------------------------------------------
 // dec_sse_bin.sv — Thin wrapper: dec_bin_generic with CFG_EXCH=EXCH_SSE (M7)
 // Same ports as dec_szse_bin; field-offset defaults differ only in TB/CSR.
+// DATA_W = 32|64 (default 64).
 // -----------------------------------------------------------------------------
 `timescale 1ns / 1ps
 
 module dec_sse_bin
   import md_pkg::*;
-(
+#(
+  parameter int DATA_W = 64,
+  parameter int KEEP_W = DATA_W / 8
+) (
   input  logic         clk,
   input  logic         rst_n,
 
@@ -21,12 +25,12 @@ module dec_sse_bin
   input  logic [63:0]  cfg_type_lut,
   input  logic [7:0]   cfg_off_ch_hint,
 
-  input  logic [63:0]  s_axis_tdata,
-  input  logic [7:0]   s_axis_tkeep,
-  input  logic         s_axis_tvalid,
-  input  logic         s_axis_tlast,
-  output logic         s_axis_tready,
-  input  pay_tuser_t   s_axis_tuser,
+  input  logic [DATA_W-1:0] s_axis_tdata,
+  input  logic [KEEP_W-1:0] s_axis_tkeep,
+  input  logic              s_axis_tvalid,
+  input  logic              s_axis_tlast,
+  output logic              s_axis_tready,
+  input  pay_tuser_t        s_axis_tuser,
 
   output logic [511:0] m_event_tdata,
   output logic         m_event_tvalid,
@@ -40,7 +44,8 @@ module dec_sse_bin
 
   dec_bin_generic #(
     .CFG_EXCH  (EXCH_SSE),
-    .BUF_BYTES (256)
+    .BUF_BYTES (256),
+    .DATA_W    (DATA_W)
   ) u_dec (
     .clk             (clk),
     .rst_n           (rst_n),

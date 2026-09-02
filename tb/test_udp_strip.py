@@ -91,9 +91,9 @@ def build_udp_frame(
 
 async def _init(dut, cfg_dport: int = UDP_DPORT):
     cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
-    dut.cfg_dst_mac.value = CFG_MAC
-    dut.cfg_dst_ip.value = CFG_IP
-    dut.cfg_udp_dport.value = cfg_dport
+    dut.i_cfg_dst_mac.value = CFG_MAC
+    dut.i_cfg_dst_ip.value = CFG_IP
+    dut.i_cfg_udp_dport.value = cfg_dport
     await reset_dut(dut)
     await RisingEdge(dut.clk)
 
@@ -110,7 +110,7 @@ async def test_happy_multicast(dut):
     frame = build_udp_frame(payload)
     tuser_in = pack_tuser(port_id=2, sop_ts=0x1111_2222_3333_4444)
 
-    ok0 = _ctr(dut, "frames_ok")
+    ok0 = _ctr(dut, "o_frames_ok")
     send_task = cocotb.start_soon(axis_send_frame(dut, frame, tuser=tuser_in))
     # Small delay so first beats arrive, then collect
     await Timer(1, unit="ns")
@@ -124,7 +124,7 @@ async def test_happy_multicast(dut):
     assert tu["from_tcp"] == 0, tu
     assert tu["port_id"] == 2, tu
     assert tu["sop_ts"] == 0x1111_2222_3333_4444, tu
-    assert _ctr(dut, "frames_ok") == ok0 + 1
+    assert _ctr(dut, "o_frames_ok") == ok0 + 1
 
 
 @cocotb.test()
@@ -135,13 +135,13 @@ async def test_filter_miss_dst_ip(dut):
     bad_ip = bytes.fromhex("ef010102")  # 239.1.1.2
     frame = build_udp_frame(payload, dst_ip=bad_ip)
 
-    ok0 = _ctr(dut, "frames_ok")
-    f0 = _ctr(dut, "drop_filter")
+    ok0 = _ctr(dut, "o_frames_ok")
+    f0 = _ctr(dut, "o_drop_filter")
     await axis_send_frame(dut, frame, tuser=pack_tuser())
     idle = await axis_expect_idle(dut, 30)
     assert idle, "unexpected payload on filter miss"
-    assert _ctr(dut, "frames_ok") == ok0
-    assert _ctr(dut, "drop_filter") == f0 + 1
+    assert _ctr(dut, "o_frames_ok") == ok0
+    assert _ctr(dut, "o_drop_filter") == f0 + 1
 
 
 @cocotb.test()
@@ -149,13 +149,13 @@ async def test_non_udp_tcp(dut):
     """IP proto=6 (TCP) → drop_not_udp++."""
     await _init(dut)
     frame = build_udp_frame(b"HELLOMD" * 2, proto=6)
-    n0 = _ctr(dut, "drop_not_udp")
-    ok0 = _ctr(dut, "frames_ok")
+    n0 = _ctr(dut, "o_drop_not_udp")
+    ok0 = _ctr(dut, "o_frames_ok")
     await axis_send_frame(dut, frame, tuser=pack_tuser())
     idle = await axis_expect_idle(dut, 30)
     assert idle
-    assert _ctr(dut, "drop_not_udp") == n0 + 1
-    assert _ctr(dut, "frames_ok") == ok0
+    assert _ctr(dut, "o_drop_not_udp") == n0 + 1
+    assert _ctr(dut, "o_frames_ok") == ok0
 
 
 @cocotb.test()
@@ -163,13 +163,13 @@ async def test_ip_options(dut):
     """IHL=6 → drop_opt++."""
     await _init(dut)
     frame = build_udp_frame(b"HELLOMD" * 2, ihl=6)
-    o0 = _ctr(dut, "drop_opt")
-    ok0 = _ctr(dut, "frames_ok")
+    o0 = _ctr(dut, "o_drop_opt")
+    ok0 = _ctr(dut, "o_frames_ok")
     await axis_send_frame(dut, frame, tuser=pack_tuser())
     idle = await axis_expect_idle(dut, 30)
     assert idle
-    assert _ctr(dut, "drop_opt") == o0 + 1
-    assert _ctr(dut, "frames_ok") == ok0
+    assert _ctr(dut, "o_drop_opt") == o0 + 1
+    assert _ctr(dut, "o_frames_ok") == ok0
 
 
 @cocotb.test()
@@ -180,26 +180,26 @@ async def test_cfg_udp_dport_zero_and_mismatch(dut):
     other = 0xABCD
     payload = b"HELLOMD" * 3
     frame = build_udp_frame(payload, udp_dport=other)
-    ok0 = _ctr(dut, "frames_ok")
+    ok0 = _ctr(dut, "o_frames_ok")
     send = cocotb.start_soon(axis_send_frame(dut, frame, tuser=pack_tuser()))
     await Timer(1, unit="ns")
     out, tuser_raw = await axis_recv_frame(dut, timeout_cycles=200)
     await send
     assert out == payload
     assert unpack_pay_tuser(tuser_raw)["udp_dport"] == other
-    assert _ctr(dut, "frames_ok") == ok0 + 1
+    assert _ctr(dut, "o_frames_ok") == ok0 + 1
 
     # Part B: cfg=0x1F40 drops other port
-    dut.cfg_udp_dport.value = UDP_DPORT
+    dut.i_cfg_udp_dport.value = UDP_DPORT
     await RisingEdge(dut.clk)
-    f0 = _ctr(dut, "drop_filter")
-    ok1 = _ctr(dut, "frames_ok")
+    f0 = _ctr(dut, "o_drop_filter")
+    ok1 = _ctr(dut, "o_frames_ok")
     frame2 = build_udp_frame(payload, udp_dport=other)
     await axis_send_frame(dut, frame2, tuser=pack_tuser())
     idle = await axis_expect_idle(dut, 30)
     assert idle
-    assert _ctr(dut, "drop_filter") == f0 + 1
-    assert _ctr(dut, "frames_ok") == ok1
+    assert _ctr(dut, "o_drop_filter") == f0 + 1
+    assert _ctr(dut, "o_frames_ok") == ok1
 
 
 @cocotb.test()
