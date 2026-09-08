@@ -317,12 +317,17 @@ module md_rx_top_x1100
   assign m_book_tlast  = 1'b1;
 
   // =========================================================================
-  // Broadcast to mcast + dma
+  // Broadcast to mcast + dma. Role A: fanout tready stays 1; each engine
+  // always-ready and drops internally. Do not AND or forward dma ready.
+  // SPEC: docs/udp-mcast-tx-design.md (FROZEN)
   // =========================================================================
   logic mcast_ev_ready, dma_ev_ready;
-  assign post_tready = mcast_ev_ready && dma_ev_ready;
+  assign post_tready = 1'b1;
 
-  logic [31:0] mcast_tx_c, mcast_df, mcast_dr;
+  logic [31:0] mcast_tx_c, mcast_df, mcast_dr, mcast_dg, mcast_ns;
+  logic [47:0] mcast_da_stat;
+  logic [0:0]  mcast_dbg_cs;
+  logic        mcast_dbg_sticky;
   logic [31:0] dma_tx_c, dma_df;
 
   mcast_eng #(.CLIENT_ID(0)) u_mcast (
@@ -338,7 +343,10 @@ module md_rx_top_x1100
     .cfg_ch_mask(cfg_ch_mask), .cfg_period(cfg_mcast_period),
     .cfg_refill(cfg_mcast_refill),
     .filt_we(filt_we), .filt_addr(filt_addr), .filt_bit(filt_bit),
-    .tx_ok(mcast_tx_c), .drop_filt(mcast_df), .drop_rate(mcast_dr)
+    .tx_ok(mcast_tx_c), .drop_filt(mcast_df), .drop_rate(mcast_dr),
+    .o_drop_gate(mcast_dg), .o_nosend(mcast_ns),
+    .o_stat_dst_mac(mcast_da_stat),
+    .o_dbg_cs_state(mcast_dbg_cs), .o_dbg_err_sticky(mcast_dbg_sticky)
   );
 
   dma_pack u_dma (
@@ -378,8 +386,10 @@ module md_rx_top_x1100
 
   logic unused_tie;
   assign unused_tie = ^{arb_gap, arb_dtcp, cam_drop_c, mcast_df, mcast_dr,
-                        dma_df, arb_tcp_rdy, hot_we, hot_addr, hot_code,
-                        hot_entry_valid, book_clear, dbg0, dbg1, dbg2, dbg3,
-                        dbg4, dbg5, dbg6, dbg7, dbg8, dbg9};
+                        mcast_dg, mcast_ns, mcast_da_stat, mcast_dbg_cs,
+                        mcast_dbg_sticky, dma_df, arb_tcp_rdy, hot_we, hot_addr,
+                        hot_code, hot_entry_valid, book_clear, dbg0, dbg1,
+                        dbg2, dbg3, dbg4, dbg5, dbg6, dbg7, dbg8, dbg9,
+                        mcast_ev_ready, dma_ev_ready};
 
 endmodule

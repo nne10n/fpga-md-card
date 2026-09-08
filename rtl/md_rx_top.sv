@@ -400,12 +400,17 @@ module md_rx_top
   );
 
   // =========================================================================
-  // event_bus: broadcast to mcast + dma (both tready=1 → AND is free)
+  // event_bus: fanout to mcast + dma. Role A — each consumer tready≡1 and
+  // drops internally; fanout tready stays 1 (no AND backpressure into CAM).
+  // SPEC: docs/udp-mcast-tx-design.md (FROZEN)
   // =========================================================================
   logic mcast_ev_ready, dma_ev_ready;
-  assign cam_tready = mcast_ev_ready && dma_ev_ready;
+  assign cam_tready = 1'b1;
 
-  logic [31:0] mcast_tx_c, mcast_df, mcast_dr;
+  logic [31:0] mcast_tx_c, mcast_df, mcast_dr, mcast_dg, mcast_ns;
+  logic [47:0] mcast_da_stat;
+  logic [0:0]  mcast_dbg_cs;
+  logic        mcast_dbg_sticky;
   logic [31:0] dma_tx_c, dma_df;
 
   mcast_eng #(.CLIENT_ID(0)) u_mcast (
@@ -415,13 +420,18 @@ module md_rx_top
     .m_axis_tdata(m_mcast_tdata), .m_axis_tkeep(m_mcast_tkeep),
     .m_axis_tvalid(m_mcast_tvalid), .m_axis_tlast(m_mcast_tlast),
     .m_axis_tready(m_mcast_tready),
+    // cfg_mcast_dst_mac kept for CSR pin compatibility; mcast_eng ignores it
+    // (formal DA = RFC1112(dip)). Handshake: mcast tready is Role A (always 1).
     .cfg_src_mac(cfg_mcast_src_mac), .cfg_dst_mac(cfg_mcast_dst_mac),
     .cfg_src_ip(cfg_mcast_src_ip), .cfg_dst_ip(cfg_mcast_dst_ip),
     .cfg_udp_sport(cfg_mcast_udp_sport), .cfg_udp_dport(cfg_mcast_udp_dport),
     .cfg_ch_mask(cfg_ch_mask), .cfg_period(cfg_mcast_period),
     .cfg_refill(cfg_mcast_refill),
     .filt_we(filt_we), .filt_addr(filt_addr), .filt_bit(filt_bit),
-    .tx_ok(mcast_tx_c), .drop_filt(mcast_df), .drop_rate(mcast_dr)
+    .tx_ok(mcast_tx_c), .drop_filt(mcast_df), .drop_rate(mcast_dr),
+    .o_drop_gate(mcast_dg), .o_nosend(mcast_ns),
+    .o_stat_dst_mac(mcast_da_stat),
+    .o_dbg_cs_state(mcast_dbg_cs), .o_dbg_err_sticky(mcast_dbg_sticky)
   );
 
   dma_pack u_dma (
@@ -464,7 +474,9 @@ module md_rx_top
   // Silence unused (TCP stub / arb gap counters)
   logic unused_gap;
   assign unused_gap = ^{arb_sse_gap, arb_szse_gap, arb_sse_dtcp, arb_szse_dtcp,
-                        cam_drop_c, mcast_df, mcast_dr, dma_df,
-                        arb_sse_tcp_rdy, arb_szse_tcp_rdy, merge_s2_rdy};
+                        cam_drop_c, mcast_df, mcast_dr, mcast_dg, mcast_ns,
+                        mcast_da_stat, mcast_dbg_cs, mcast_dbg_sticky, dma_df,
+                        arb_sse_tcp_rdy, arb_szse_tcp_rdy, merge_s2_rdy,
+                        mcast_ev_ready, dma_ev_ready};
 
 endmodule
