@@ -318,9 +318,11 @@ module md_rx_top_x1100
 
   // =========================================================================
   // Broadcast to mcast + dma
+  // Role A: mcast_eng tready is tied 1. Do not AND mcast&&dma into post_tready
+  // (dma_pack is also always-ready; fork independently).
   // =========================================================================
   logic mcast_ev_ready, dma_ev_ready;
-  assign post_tready = mcast_ev_ready && dma_ev_ready;
+  assign post_tready = dma_ev_ready;
 
   logic [31:0] mcast_tx_c, mcast_df, mcast_dr;
   logic [31:0] dma_tx_c, dma_df;
@@ -380,6 +382,6 @@ module md_rx_top_x1100
   assign unused_tie = ^{arb_gap, arb_dtcp, cam_drop_c, mcast_df, mcast_dr,
                         dma_df, arb_tcp_rdy, hot_we, hot_addr, hot_code,
                         hot_entry_valid, book_clear, dbg0, dbg1, dbg2, dbg3,
-                        dbg4, dbg5, dbg6, dbg7, dbg8, dbg9};
+                        dbg4, dbg5, dbg6, dbg7, dbg8, dbg9, mcast_ev_ready};
 
 endmodule

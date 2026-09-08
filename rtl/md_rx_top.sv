@@ -415,6 +415,8 @@ module md_rx_top
     .m_axis_tdata(m_mcast_tdata), .m_axis_tkeep(m_mcast_tkeep),
     .m_axis_tvalid(m_mcast_tvalid), .m_axis_tlast(m_mcast_tlast),
     .m_axis_tready(m_mcast_tready),
+    // cfg_mcast_dst_mac kept for CSR pin compatibility; mcast_eng ignores it
+    // (formal DA = RFC1112(dip)). Handshake: mcast tready is Role A (always 1).
     .cfg_src_mac(cfg_mcast_src_mac), .cfg_dst_mac(cfg_mcast_dst_mac),
     .cfg_src_ip(cfg_mcast_src_ip), .cfg_dst_ip(cfg_mcast_dst_ip),
     .cfg_udp_sport(cfg_mcast_udp_sport), .cfg_udp_dport(cfg_mcast_udp_dport),
