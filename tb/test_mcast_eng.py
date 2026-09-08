@@ -528,18 +528,22 @@ async def test_gate_len_mismatch(dut):
 
 
 @cocotb.test()
-async def test_gate_map_en0_mac_mismatch(dut):
-    """map_en=0 and CSR dst_mac != RFC1112(dip) → drop_gate, sticky, no TX."""
+async def test_gate_map_en0_bogus_mac_still_tx(dut):
+    """map_en=0 + CSR dst_mac != RFC1112: still TX; on-wire DA is RFC1112, not user MAC."""
     await _init(dut, ch_mask=0xFF, period=0, map_en=0, dst_mac=CFG_DST_MAC_BOGUS)
     await filt_set(dut, 5, 1)
     g0 = _ctr(dut, "o_drop_gate")
     ok0 = _ctr(dut, "tx_ok")
-    await send_event(dut, _make_ev())
-    idle = await expect_idle(dut, 40)
-    assert idle, "unexpected TX when map_en=0 and CSR MAC mismatches RFC1112"
-    assert _ctr(dut, "o_drop_gate") == g0 + 1
-    assert _ctr(dut, "tx_ok") == ok0
-    assert int(dut.o_dbg_err_sticky.value) == 1
+    send = cocotb.start_soon(send_event(dut, _make_ev()))
+    frame = await recv_frame(dut)
+    await send
+    parsed = parse_eth_udp(frame)
+    assert parsed["dst_mac"] == DST_MAC
+    assert parsed["dst_mac"] != bytes.fromhex("aabbccddeeff")
+    assert parsed["dst_ip"] == DST_IP
+    assert _ctr(dut, "tx_ok") == ok0 + 1
+    assert _ctr(dut, "o_drop_gate") == g0
+    assert int(dut.o_dbg_err_sticky.value) == 0
 
 
 @cocotb.test()

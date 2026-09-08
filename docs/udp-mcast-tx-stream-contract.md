@@ -49,9 +49,9 @@ i_s_udp_is_mcast
 | `cfg_dst_ip` | 默认 DIP |
 | `cfg_udp_sport` / `cfg_udp_dport` | 默认端口 |
 | `cfg_ttl_default` | 默认 TTL；写 0 → 1 |
-| `cfg_map_en` | 默认 **1**。见 FROZEN map gate |
+| `cfg_map_en` | 默认 **1**。两侧 DA 都是 RFC1112；`0` 不因用户 MAC 不匹配而丢包 |
 | `cfg_mtu_pay` | payload 上限；0 → 1472 |
-| `cfg_dst_mac` | **不是** 线侧 DA。`map_en=0` 时必须等于 RFC1112(locked DIP) |
+| `cfg_dst_mac` | **不是** 线侧 DA，也不是 map_en=0 的丢包条件 |
 | `o_stat_dst_mac` | RFC1112(`cfg_dst_ip`) 只读镜像 |
 
 过滤 / token bucket（`filt_*`、`cfg_ch_mask`、`cfg_period`/`cfg_refill`）仍在 lock 之前，属业务过滤，不是 UDP 契约 gate。
@@ -79,7 +79,7 @@ Lock 之后、组包之前：
 1. 224/4 + `is_mcast`
 2. SA 非组
 3. `payload_len` 与实际长度一致，且 `0 < len ≤ mtu_pay`（且 ≤ 实现 MAX_PAY）
-4. map（FROZEN：`map_en=1` 通过；`map_en=0` 要求 CSR MAC == RFC1112(dip)）
+4. map（FROZEN：DA 永远 RFC1112；`map_en=0` 不因 CSR MAC 不匹配而失败）
 
 失败：`o_dbg_err_sticky`、`o_drop_gate++`、`o_nosend++`，不发帧，`tready` 仍为 1。
 

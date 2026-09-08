@@ -9,8 +9,8 @@
 // 三分法
 //   CSR slow-path : src MAC/IP, default DIP/ports, ttl_default, map_en=1,
 //                   mtu_pay. cfg_dst_mac is not an on-wire DA (no ARP).
-//                   map_en=1 → DA=RFC1112(dip); map_en=0 → require
-//                   cfg_dst_mac==RFC1112(dip) else sticky/no-TX.
+//                   map_en=1 → DA=RFC1112(dip). map_en=0 does not put user
+//                   MAC on the wire and does not drop on CSR MAC mismatch.
 //                   o_stat_dst_mac is the RFC1112(CSR dip) read-only mirror
 //   AXIS + SOP    : UDP payload only; meta = dst/src_ip, sport/dport, ttl,
 //                   payload_len, is_mcast — no MAC/VLAN
@@ -43,7 +43,7 @@ module mcast_eng
   input  logic         m_axis_tready,
 
   input  logic [47:0]  cfg_src_mac,
-  input  logic [47:0]  cfg_dst_mac,     // map_en=0: must equal RFC1112(dip); never on-wire DA
+  input  logic [47:0]  cfg_dst_mac,     // never on-wire DA (RFC1112 only)
   input  logic [31:0]  cfg_src_ip,
   input  logic [31:0]  cfg_dst_ip,
   input  logic [15:0]  cfg_udp_sport,
@@ -90,8 +90,10 @@ module mcast_eng
 
   logic unused_cid;
   logic unused_tlast;
-  assign unused_cid   = (CLIENT_ID == 0) ? 1'b0 : 1'b1;
-  assign unused_tlast = s_event_tlast;
+  logic unused_csr_da;
+  assign unused_cid    = (CLIENT_ID == 0) ? 1'b0 : 1'b1;
+  assign unused_tlast  = s_event_tlast;
+  assign unused_csr_da = cfg_map_en ^ (|cfg_dst_mac);
 
   // Role A: always accept; never backpressure the producer.
   assign s_event_tready = 1'b1;
@@ -250,9 +252,10 @@ module mcast_eng
   assign w_gate_mcast = w_lock_is_mcast && (w_lock_dip[31:28] == 4'hE);
   assign w_gate_sa    = (w_lock_sip[31:28] != 4'hE);
   assign w_gate_len   = (w_lock_pay_len == w_actual_len);
-  // SPEC: docs/udp-mcast-tx-design.md §3 map gate
-  assign w_gate_map   = cfg_map_en ? 1'b1
-                                   : (cfg_dst_mac == rfc1112_da(w_lock_dip));
+  // SPEC: docs/udp-mcast-tx-design.md §3 — DA is always RFC1112(dip).
+  // map_en=0 must not drop because CSR dst_mac != on-wire DA (user MAC is
+  // never the DA source). map_en default 1; both values keep derived DA.
+  assign w_gate_map   = 1'b1;
   assign w_gate_mtu   = (w_lock_pay_len != 16'd0) && (w_lock_pay_len <= w_mtu) &&
                         (w_lock_pay_len <= 16'(MAX_PAY));
   assign w_gate_ok    = w_gate_mcast && w_gate_sa && w_gate_len &&

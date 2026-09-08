@@ -21,11 +21,11 @@ Top 端口名保持 `clk`/`rst_n`/`cfg_mcast_*`；新 CSR/meta 用默认值，�
 | 输入 | 默认 | 说明 |
 |---|---|---|
 | `cfg_ttl_default` | 1 | 0 也当 1 |
-| `cfg_map_en` | **1** | 正式路径：DA 总是 RFC1112 |
+| `cfg_map_en` | **1** | 正式路径：DA 总是 RFC1112；`0` 也不把用户 MAC 当 DA、不因 MAC 不一致丢包 |
 | `cfg_mtu_pay` | 1472 | 0 → 1472 |
 | `i_s_udp_meta_valid` | 0 | 全走 CSR |
 
-`cfg_dst_mac` 仍接在 top 上（CSR 兼容脚）。`map_en=1` 时不进 DA；`map_en=0` 时与 RFC1112(dip) 比对。
+`cfg_dst_mac` 仍接在 top 上（CSR 兼容脚）。任何 `map_en` 值都不进 DA，也不作为丢包条件。
 
 ---
 

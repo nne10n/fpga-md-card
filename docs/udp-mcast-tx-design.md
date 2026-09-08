@@ -10,7 +10,7 @@
 
 | 层 | 内容 | 禁止 |
 |---|---|---|
-| **CSR 慢路径** | `cfg_src_mac` / `cfg_src_ip`；默认 DIP / UDP sport/dport；`ttl_default=1`；`map_en` 默认 **1**；`mtu_pay`。`cfg_dst_mac` 只作只读镜像/一致性检查，**不是** 组包 DA | CSR 写用户 MAC 当正式 DA；ARP |
+| **CSR 慢路径** | `cfg_src_mac` / `cfg_src_ip`；默认 DIP / UDP sport/dport；`ttl_default=1`；`map_en` 默认 **1**；`mtu_pay`。`cfg_dst_mac` 只读镜像，**不是** 组包 DA | CSR 写用户 MAC 当正式 DA；ARP；用用户 MAC 与线侧 DA 比对来丢包 |
 | **AXIS + SOP meta** | `s_udp_*` 只带 UDP payload；meta = dst/src_ip、sport/dport、ttl、payload_len、`is_mcast` | meta 上带 MAC / VLAN |
 | **核内派生** | DA = RFC1112(dip)；IPv4/UDP 长度；IPv4 header checksum；UDP checksum = 0 | 把 CSR `dst_mac` 打到线侧 |
 
@@ -29,12 +29,12 @@ P1 仿真可将 `event_t`（64B）适配成一帧 UDP payload；meta 未给时�
 
 ## 3. map gate（FROZEN）
 
-禁止 `!map_en || dip==cfg_dst_ip`。
+禁止 `!map_en || dip==cfg_dst_ip`。禁止把用户 `cfg_dst_mac` 当作 DA 来源。禁止 `map_en=0` 时因 `cfg_dst_mac != RFC1112(dip)` 而 sticky/丢包。
 
 | `map_en` | 行为 |
 |---|---|
 | **1（默认）** | Eth DA **始终** RFC1112(dip)。CSR `dst_mac` 不进线侧。map 项通过。 |
-| **0** | 要求 `cfg_dst_mac == RFC1112(dst_ip)`（locked DIP）。否则 sticky + 不发。线侧 DA 仍是 RFC1112，不是用户 MAC。 |
+| **0** | DA **仍然** RFC1112(dip)。用户 MAC 不上线。不因 CSR MAC 与派生 DA 不一致而 gate fail。 |
 
 `o_stat_dst_mac` = RFC1112(CSR `cfg_dst_ip`)，只读镜像。
 
