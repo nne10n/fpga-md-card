@@ -145,11 +145,12 @@ async def apply_cfg(
     period: int = 0,
     refill: int = 0,
     ttl_default: int = 1,
-    map_en: int = 0,
+    map_en: int = 1,
     mtu_pay: int = 1472,
+    dst_mac: int | None = None,
 ):
     dut.cfg_src_mac.value = CFG_SRC_MAC
-    dut.cfg_dst_mac.value = CFG_DST_MAC_BOGUS
+    dut.cfg_dst_mac.value = CFG_DST_MAC_BOGUS if dst_mac is None else (dst_mac & ((1 << 48) - 1))
     dut.cfg_src_ip.value = CFG_SRC_IP
     dut.cfg_dst_ip.value = CFG_DST_IP
     dut.cfg_udp_sport.value = UDP_SPORT
@@ -222,8 +223,9 @@ async def _init(
     period: int = 0,
     refill: int = 0,
     ttl_default: int = 1,
-    map_en: int = 0,
+    map_en: int = 1,
     mtu_pay: int = 1472,
+    dst_mac: int | None = None,
 ):
     cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
     await apply_cfg(
@@ -234,6 +236,7 @@ async def _init(
         ttl_default=ttl_default,
         map_en=map_en,
         mtu_pay=mtu_pay,
+        dst_mac=dst_mac,
     )
     await reset_dut(dut)
     # Re-apply cfg after reset (rst does not clear cfg inputs, but be explicit)
@@ -245,6 +248,7 @@ async def _init(
         ttl_default=ttl_default,
         map_en=map_en,
         mtu_pay=mtu_pay,
+        dst_mac=dst_mac,
     )
 
 
@@ -524,13 +528,49 @@ async def test_gate_len_mismatch(dut):
 
 
 @cocotb.test()
-async def test_gate_map_en(dut):
-    """map_en=1 and locked DIP != CSR default DIP → drop_gate."""
+async def test_gate_map_en0_mac_mismatch(dut):
+    """map_en=0 and CSR dst_mac != RFC1112(dip) → drop_gate, sticky, no TX."""
+    await _init(dut, ch_mask=0xFF, period=0, map_en=0, dst_mac=CFG_DST_MAC_BOGUS)
+    await filt_set(dut, 5, 1)
+    g0 = _ctr(dut, "o_drop_gate")
+    ok0 = _ctr(dut, "tx_ok")
+    await send_event(dut, _make_ev())
+    idle = await expect_idle(dut, 40)
+    assert idle, "unexpected TX when map_en=0 and CSR MAC mismatches RFC1112"
+    assert _ctr(dut, "o_drop_gate") == g0 + 1
+    assert _ctr(dut, "tx_ok") == ok0
+    assert int(dut.o_dbg_err_sticky.value) == 1
+
+
+@cocotb.test()
+async def test_gate_map_en0_mac_match(dut):
+    """map_en=0 and CSR dst_mac == RFC1112(dip) → TX; on-wire DA still RFC1112."""
+    await _init(
+        dut,
+        ch_mask=0xFF,
+        period=0,
+        map_en=0,
+        dst_mac=int.from_bytes(DST_MAC, "big"),
+    )
+    await filt_set(dut, 5, 1)
+    send = cocotb.start_soon(send_event(dut, _make_ev()))
+    frame = await recv_frame(dut)
+    await send
+    parsed = parse_eth_udp(frame)
+    assert parsed["dst_mac"] == DST_MAC
+    assert parsed["dst_ip"] == DST_IP
+
+
+@cocotb.test()
+async def test_map_en1_meta_dip_still_tx(dut):
+    """map_en=1: locked DIP need not equal CSR DIP; DA = RFC1112(locked DIP)."""
     await _init(dut, ch_mask=0xFF, period=0, map_en=1)
     await filt_set(dut, 5, 1)
-    await _expect_gate_drop(
+    meta_dip = bytes.fromhex("e1000001")
+    _drive_meta(
         dut,
-        dst_ip=0xE1000001,
+        valid=1,
+        dst_ip=int.from_bytes(meta_dip, "big"),
         src_ip=CFG_SRC_IP,
         sport=UDP_SPORT,
         dport=UDP_DPORT,
@@ -538,6 +578,12 @@ async def test_gate_map_en(dut):
         payload_len=64,
         is_mcast=1,
     )
+    send = cocotb.start_soon(send_event(dut, _make_ev()))
+    frame = await recv_frame(dut)
+    await send
+    parsed = parse_eth_udp(frame)
+    assert parsed["dst_ip"] == meta_dip
+    assert parsed["dst_mac"] == rfc1112_da(meta_dip)
 
 
 @cocotb.test()

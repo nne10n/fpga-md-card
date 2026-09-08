@@ -400,10 +400,12 @@ module md_rx_top
   );
 
   // =========================================================================
-  // event_bus: broadcast to mcast + dma (both tready=1 → AND is free)
+  // event_bus: fanout to mcast + dma. Role A — each consumer tready≡1 and
+  // drops internally; fanout tready stays 1 (no AND backpressure into CAM).
+  // SPEC: docs/udp-mcast-tx-design.md (FROZEN)
   // =========================================================================
   logic mcast_ev_ready, dma_ev_ready;
-  assign cam_tready = mcast_ev_ready && dma_ev_ready;
+  assign cam_tready = 1'b1;
 
   logic [31:0] mcast_tx_c, mcast_df, mcast_dr, mcast_dg, mcast_ns;
   logic [47:0] mcast_da_stat;
@@ -474,6 +476,7 @@ module md_rx_top
   assign unused_gap = ^{arb_sse_gap, arb_szse_gap, arb_sse_dtcp, arb_szse_dtcp,
                         cam_drop_c, mcast_df, mcast_dr, mcast_dg, mcast_ns,
                         mcast_da_stat, mcast_dbg_cs, mcast_dbg_sticky, dma_df,
-                        arb_sse_tcp_rdy, arb_szse_tcp_rdy, merge_s2_rdy};
+                        arb_sse_tcp_rdy, arb_szse_tcp_rdy, merge_s2_rdy,
+                        mcast_ev_ready, dma_ev_ready};
 
 endmodule
