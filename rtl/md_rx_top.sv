@@ -405,7 +405,9 @@ module md_rx_top
   logic mcast_ev_ready, dma_ev_ready;
   assign cam_tready = mcast_ev_ready && dma_ev_ready;
 
-  logic [31:0] mcast_tx_c, mcast_df, mcast_dr;
+  logic [31:0] mcast_tx_c, mcast_df, mcast_dr, mcast_dg, mcast_ns;
+  logic [47:0] mcast_da_stat;
+  logic        mcast_dbg_cs, mcast_dbg_sticky;
   logic [31:0] dma_tx_c, dma_df;
 
   mcast_eng #(.CLIENT_ID(0)) u_mcast (
@@ -423,7 +425,10 @@ module md_rx_top
     .cfg_ch_mask(cfg_ch_mask), .cfg_period(cfg_mcast_period),
     .cfg_refill(cfg_mcast_refill),
     .filt_we(filt_we), .filt_addr(filt_addr), .filt_bit(filt_bit),
-    .tx_ok(mcast_tx_c), .drop_filt(mcast_df), .drop_rate(mcast_dr)
+    .tx_ok(mcast_tx_c), .drop_filt(mcast_df), .drop_rate(mcast_dr),
+    .o_drop_gate(mcast_dg), .o_nosend(mcast_ns),
+    .o_stat_dst_mac(mcast_da_stat),
+    .o_dbg_cs_state(mcast_dbg_cs), .o_dbg_err_sticky(mcast_dbg_sticky)
   );
 
   dma_pack u_dma (
@@ -466,7 +471,8 @@ module md_rx_top
   // Silence unused (TCP stub / arb gap counters)
   logic unused_gap;
   assign unused_gap = ^{arb_sse_gap, arb_szse_gap, arb_sse_dtcp, arb_szse_dtcp,
-                        cam_drop_c, mcast_df, mcast_dr, dma_df,
+                        cam_drop_c, mcast_df, mcast_dr, mcast_dg, mcast_ns,
+                        mcast_da_stat, mcast_dbg_cs, mcast_dbg_sticky, dma_df,
                         arb_sse_tcp_rdy, arb_szse_tcp_rdy, merge_s2_rdy};
 
 endmodule
