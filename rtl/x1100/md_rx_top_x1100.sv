@@ -326,7 +326,8 @@ module md_rx_top_x1100
 
   logic [31:0] mcast_tx_c, mcast_df, mcast_dr, mcast_dg, mcast_ns;
   logic [47:0] mcast_da_stat;
-  logic        mcast_dbg_cs, mcast_dbg_sticky;
+  logic [0:0]  mcast_dbg_cs;
+  logic        mcast_dbg_sticky;
   logic [31:0] dma_tx_c, dma_df;
 
   mcast_eng #(.CLIENT_ID(0)) u_mcast (
