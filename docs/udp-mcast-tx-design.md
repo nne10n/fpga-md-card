@@ -4,8 +4,6 @@
 
 相对原 §4.3 迁移期，本修订废弃 mismatch sticky；线侧 DA 永远 RFC1112(dip)，cfg_map_en 仅作兼容/遥测保留（默认 1）。
 
-修订（相对原 §4.3 迁移期）：废弃 map_en=0 时因 CSR MAC≠RFC1112(dip) 而 sticky 不发的路径；线侧 Eth DA 永远 RFC1112(dip)，用户 MAC 不上线；cfg_map_en 默认 1，仅作兼容/遥测保留。
-
 范围：N=1 硬核 `mcast_eng` 出站。不做 N>1、IGMP、loopback、十档业务扩展。无 ARP。正式路径不接受用户提供的线侧 DA。
 
 ---
