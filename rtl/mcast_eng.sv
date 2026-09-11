@@ -8,7 +8,7 @@
 //
 // 三分法
 //   CSR slow-path : src MAC/IP, default DIP/ports, ttl_default, map_en=1,
-//                   mtu_pay. cfg_dst_mac is not an on-wire DA (no ARP).
+//                   mtu_pay. i_cfg_dst_mac is not an on-wire DA (no ARP).
 //                   map_en=1 → DA=RFC1112(dip). map_en=0 does not put user
 //                   MAC on the wire and does not drop on CSR MAC mismatch.
 //                   o_stat_dst_mac is the RFC1112(CSR dip) read-only mirror
@@ -17,7 +17,7 @@
 //   Derived       : DA=RFC1112(dip); IP/UDP lengths; IPv4 csum; UDP csum=0
 //
 // Order: lock meta → gate (224/4, SA not group, len match, map, mtu) → fill → TX
-// Role A: s_event_tready ≡ 1; failures sticky + drop/nosend; no producer BP
+// Role A: o_s_event_tready ≡ 1; failures sticky + drop/nosend; no producer BP
 // Same-clock: do not instantiate tx_afifo.
 // -----------------------------------------------------------------------------
 `timescale 1ns / 1ps
@@ -28,34 +28,34 @@ module mcast_eng
 #(
   parameter int CLIENT_ID = 0
 ) (
-  input  logic         clk,
-  input  logic         rst_n,
+  input  logic         sys_clk,
+  input  logic         sys_rst_n,
 
-  input  logic [511:0] s_event_tdata,
-  input  logic         s_event_tvalid,
-  input  logic         s_event_tlast,
-  output logic         s_event_tready,
+  input  logic [511:0] i_s_event_tdata,
+  input  logic         i_s_event_tvalid,
+  input  logic         i_s_event_tlast,
+  output logic         o_s_event_tready,
 
-  output logic [63:0]  m_axis_tdata,
-  output logic [7:0]   m_axis_tkeep,
-  output logic         m_axis_tvalid,
-  output logic         m_axis_tlast,
-  input  logic         m_axis_tready,
+  output logic [63:0]  o_m_axis_tdata,
+  output logic [7:0]   o_m_axis_tkeep,
+  output logic         o_m_axis_tvalid,
+  output logic         o_m_axis_tlast,
+  input  logic         i_m_axis_tready,
 
-  input  logic [47:0]  cfg_src_mac,
-  input  logic [47:0]  cfg_dst_mac,     // never on-wire DA (RFC1112 only)
-  input  logic [31:0]  cfg_src_ip,
-  input  logic [31:0]  cfg_dst_ip,
-  input  logic [15:0]  cfg_udp_sport,
-  input  logic [15:0]  cfg_udp_dport,
-  input  logic [7:0]   cfg_ch_mask,
-  input  logic [15:0]  cfg_period,
-  input  logic [15:0]  cfg_refill,
+  input  logic [47:0]  i_cfg_src_mac,
+  input  logic [47:0]  i_cfg_dst_mac,     // never on-wire DA (RFC1112 only)
+  input  logic [31:0]  i_cfg_src_ip,
+  input  logic [31:0]  i_cfg_dst_ip,
+  input  logic [15:0]  i_cfg_udp_sport,
+  input  logic [15:0]  i_cfg_udp_dport,
+  input  logic [7:0]   i_cfg_ch_mask,
+  input  logic [15:0]  i_cfg_period,
+  input  logic [15:0]  i_cfg_refill,
 
   // CSR slow-path extensions (defaults keep existing instantiations green)
-  input  logic [7:0]   cfg_ttl_default = 8'd1,
-  input  logic         cfg_map_en      = 1'b1,
-  input  logic [15:0]  cfg_mtu_pay     = 16'd1472,
+  input  logic [7:0]   i_cfg_ttl_default = 8'd1,
+  input  logic         i_cfg_map_en      = 1'b1,
+  input  logic [15:0]  i_cfg_mtu_pay     = 16'd1472,
 
   // SOP meta (sampled with the event). meta_valid=0 → CSR defaults.
   input  logic         i_s_udp_meta_valid  = 1'b0,
@@ -67,13 +67,13 @@ module mcast_eng
   input  logic [15:0]  i_s_udp_payload_len = 16'd0,
   input  logic         i_s_udp_is_mcast    = 1'b0,
 
-  input  logic         filt_we,
-  input  logic [12:0]  filt_addr,
-  input  logic         filt_bit,
+  input  logic         i_filt_we,
+  input  logic [12:0]  i_filt_addr,
+  input  logic         i_filt_bit,
 
-  output logic [31:0]  tx_ok,
-  output logic [31:0]  drop_filt,
-  output logic [31:0]  drop_rate,
+  output logic [31:0]  o_tx_ok,
+  output logic [31:0]  o_drop_filt,
+  output logic [31:0]  o_drop_rate,
   output logic [31:0]  o_drop_gate,
   output logic [31:0]  o_nosend,
   output logic [47:0]  o_stat_dst_mac,
@@ -82,21 +82,15 @@ module mcast_eng
   (* keep = "true" *) output logic       o_dbg_err_sticky
 );
 
-  // House-style names; this module stays on the event-bus clock (no CDC).
-  logic sys_clk;
-  logic sys_rst_n;
-  assign sys_clk   = clk;
-  assign sys_rst_n = rst_n;
-
   logic unused_cid;
   logic unused_tlast;
   logic unused_csr_da;
   assign unused_cid    = (CLIENT_ID == 0) ? 1'b0 : 1'b1;
-  assign unused_tlast  = s_event_tlast;
-  assign unused_csr_da = cfg_map_en ^ (|cfg_dst_mac);
+  assign unused_tlast  = i_s_event_tlast;
+  assign unused_csr_da = i_cfg_map_en ^ (|i_cfg_dst_mac);
 
   // Role A: always accept; never backpressure the producer.
-  assign s_event_tready = 1'b1;
+  assign o_s_event_tready = 1'b1;
 
   localparam int unsigned MAX_PAY     = 64;
   localparam int unsigned HDR_BYTES   = 42;
@@ -168,8 +162,8 @@ module mcast_eng
     if (!sys_rst_n) begin
       for (fi_filt = 0; fi_filt < CAM_DEPTH; fi_filt = fi_filt + 1)
         r_filt[fi_filt] <= 1'b0;
-    end else if (filt_we) begin
-      r_filt[filt_addr] <= filt_bit;
+    end else if (i_filt_we) begin
+      r_filt[i_filt_addr] <= i_filt_bit;
     end
   end
 
@@ -177,14 +171,14 @@ module mcast_eng
   // Event filter / rate (producer-facing, before UDP lock)
   // -------------------------------------------------------------------------
   event_t ev_in;
-  assign ev_in = event_t'(s_event_tdata);
+  assign ev_in = event_t'(i_s_event_tdata);
 
   logic w_sym_ok;
   logic w_ch_ok;
   logic w_filt_ok;
   assign w_sym_ok  = (ev_in.symbol_id < 16'(CAM_DEPTH)) && r_filt[ev_in.symbol_id[12:0]];
   assign w_ch_ok   = (ev_in.ch < 4'd8) &&
-                     ((cfg_ch_mask & (8'b1 << ev_in.ch[2:0])) != 8'd0);
+                     ((i_cfg_ch_mask & (8'b1 << ev_in.ch[2:0])) != 8'd0);
   assign w_filt_ok = w_sym_ok && w_ch_ok;
 
   typedef enum logic [0:0] {
@@ -202,15 +196,15 @@ module mcast_eng
   logic [15:0] r_period_cnt;
   logic        w_rate_unlimited;
   logic        w_rate_ok;
-  assign w_rate_unlimited = (cfg_period == 16'd0);
+  assign w_rate_unlimited = (i_cfg_period == 16'd0);
   assign w_rate_ok        = w_rate_unlimited || (r_tokens != 16'd0);
 
   logic w_cand;
   logic w_drop_filt_fire;
   logic w_drop_rate_fire;
-  assign w_cand           = s_event_tvalid && w_filt_ok && w_rate_ok && !w_busy;
-  assign w_drop_filt_fire = s_event_tvalid && !w_filt_ok;
-  assign w_drop_rate_fire = s_event_tvalid && w_filt_ok && (!w_rate_ok || w_busy);
+  assign w_cand           = i_s_event_tvalid && w_filt_ok && w_rate_ok && !w_busy;
+  assign w_drop_filt_fire = i_s_event_tvalid && !w_filt_ok;
+  assign w_drop_rate_fire = i_s_event_tvalid && w_filt_ok && (!w_rate_ok || w_busy);
 
   // -------------------------------------------------------------------------
   // Lock meta (CSR defaults; SOP meta overrides). ttl==0 → 1.
@@ -225,16 +219,16 @@ module mcast_eng
   logic        w_lock_is_mcast;
   logic [15:0] w_mtu;
 
-  assign w_lock_dip      = pick32(i_s_udp_meta_valid, i_s_udp_dst_ip, cfg_dst_ip);
-  assign w_lock_sip      = pick32(i_s_udp_meta_valid, i_s_udp_src_ip, cfg_src_ip);
-  assign w_lock_sport    = pick16(i_s_udp_meta_valid, i_s_udp_sport, cfg_udp_sport);
-  assign w_lock_dport    = pick16(i_s_udp_meta_valid, i_s_udp_dport, cfg_udp_dport);
-  assign w_lock_ttl_raw  = i_s_udp_meta_valid ? i_s_udp_ttl : cfg_ttl_default;
+  assign w_lock_dip      = pick32(i_s_udp_meta_valid, i_s_udp_dst_ip, i_cfg_dst_ip);
+  assign w_lock_sip      = pick32(i_s_udp_meta_valid, i_s_udp_src_ip, i_cfg_src_ip);
+  assign w_lock_sport    = pick16(i_s_udp_meta_valid, i_s_udp_sport, i_cfg_udp_sport);
+  assign w_lock_dport    = pick16(i_s_udp_meta_valid, i_s_udp_dport, i_cfg_udp_dport);
+  assign w_lock_ttl_raw  = i_s_udp_meta_valid ? i_s_udp_ttl : i_cfg_ttl_default;
   assign w_lock_ttl      = (w_lock_ttl_raw == 8'd0) ? 8'd1 : w_lock_ttl_raw;
   assign w_lock_pay_len  = (i_s_udp_meta_valid && (i_s_udp_payload_len != 16'd0))
                            ? i_s_udp_payload_len : 16'(MAX_PAY);
   assign w_lock_is_mcast = i_s_udp_meta_valid ? i_s_udp_is_mcast : 1'b1;
-  assign w_mtu           = (cfg_mtu_pay == 16'd0) ? 16'd1472 : cfg_mtu_pay;
+  assign w_mtu           = (i_cfg_mtu_pay == 16'd0) ? 16'd1472 : i_cfg_mtu_pay;
 
   // Event adapter: one event beat == MAX_PAY UDP payload bytes.
   logic [15:0] w_actual_len;
@@ -266,7 +260,7 @@ module mcast_eng
 
   logic [47:0] w_da;
   assign w_da            = rfc1112_da(w_lock_dip);
-  assign o_stat_dst_mac  = rfc1112_da(cfg_dst_ip);
+  assign o_stat_dst_mac  = rfc1112_da(i_cfg_dst_ip);
 
   logic [15:0] w_udp_len;
   logic [15:0] w_ip_total;
@@ -301,7 +295,7 @@ module mcast_eng
           ns_state = ST_TX;
       end
       ST_TX: begin
-        if (m_axis_tready && w_tx_last)
+        if (i_m_axis_tready && w_tx_last)
           ns_state = ST_IDLE;
       end
       default: ns_state = ST_IDLE;
@@ -329,9 +323,9 @@ module mcast_eng
       if (w_rate_unlimited) begin
         p_next = 16'd0;
         t_next = 16'hFFFF;
-      end else if (r_period_cnt >= (cfg_period - 16'd1)) begin
+      end else if (r_period_cnt >= (i_cfg_period - 16'd1)) begin
         p_next = 16'd0;
-        t_next = sat_add16(t_next, cfg_refill);
+        t_next = sat_add16(t_next, i_cfg_refill);
       end else begin
         p_next = r_period_cnt + 16'd1;
       end
@@ -354,9 +348,9 @@ module mcast_eng
   logic [31:0] r_c_nosend;
   logic        r_err_sticky;
 
-  assign tx_ok           = r_c_tx;
-  assign drop_filt       = r_c_filt;
-  assign drop_rate       = r_c_rate;
+  assign o_tx_ok           = r_c_tx;
+  assign o_drop_filt       = r_c_filt;
+  assign o_drop_rate       = r_c_rate;
   assign o_drop_gate     = r_c_gate;
   assign o_nosend        = r_c_nosend;
   assign o_dbg_err_sticky = r_err_sticky;
@@ -391,10 +385,10 @@ module mcast_eng
   logic [63:0] r_frame [0:MAX_BEATS-1];
   logic [7:0]  r_keep  [0:MAX_BEATS-1];
 
-  assign m_axis_tvalid = (cs_state == ST_TX);
-  assign m_axis_tdata  = r_frame[r_beat];
-  assign m_axis_tkeep  = r_keep[r_beat];
-  assign m_axis_tlast  = w_tx_last;
+  assign o_m_axis_tvalid = (cs_state == ST_TX);
+  assign o_m_axis_tdata  = r_frame[r_beat];
+  assign o_m_axis_tkeep  = r_keep[r_beat];
+  assign o_m_axis_tlast  = w_tx_last;
 
   always_ff @(posedge sys_clk or negedge sys_rst_n) begin
     if (!sys_rst_n) begin
@@ -426,12 +420,12 @@ module mcast_eng
         fb[3]  = da[23:16];
         fb[4]  = da[15:8];
         fb[5]  = da[7:0];
-        fb[6]  = cfg_src_mac[47:40];
-        fb[7]  = cfg_src_mac[39:32];
-        fb[8]  = cfg_src_mac[31:24];
-        fb[9]  = cfg_src_mac[23:16];
-        fb[10] = cfg_src_mac[15:8];
-        fb[11] = cfg_src_mac[7:0];
+        fb[6]  = i_cfg_src_mac[47:40];
+        fb[7]  = i_cfg_src_mac[39:32];
+        fb[8]  = i_cfg_src_mac[31:24];
+        fb[9]  = i_cfg_src_mac[23:16];
+        fb[10] = i_cfg_src_mac[15:8];
+        fb[11] = i_cfg_src_mac[7:0];
         fb[12] = 8'h08;
         fb[13] = 8'h00;
 
@@ -467,7 +461,7 @@ module mcast_eng
 
         for (i = 0; i < MAX_PAY; i = i + 1)
           if (i < int'(w_lock_pay_len))
-            fb[HDR_BYTES + i] = s_event_tdata[8 * i +: 8];
+            fb[HDR_BYTES + i] = i_s_event_tdata[8 * i +: 8];
 
         for (bi = 0; bi < MAX_BEATS; bi = bi + 1) begin
           base = bi * 8;
@@ -487,7 +481,7 @@ module mcast_eng
         r_beat    <= 4'd0;
         r_n_beats <= w_n_beats;
       end else if (cs_state == ST_TX) begin
-        if (m_axis_tready) begin
+        if (i_m_axis_tready) begin
           if (!w_tx_last)
             r_beat <= r_beat + 4'd1;
           else

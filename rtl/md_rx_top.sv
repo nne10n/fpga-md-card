@@ -414,21 +414,21 @@ module md_rx_top
   logic [31:0] dma_tx_c, dma_df;
 
   mcast_eng #(.CLIENT_ID(0)) u_mcast (
-    .clk(clk), .rst_n(rst_n),
-    .s_event_tdata(cam_tdata), .s_event_tvalid(cam_tvalid),
-    .s_event_tlast(cam_tlast), .s_event_tready(mcast_ev_ready),
-    .m_axis_tdata(m_mcast_tdata), .m_axis_tkeep(m_mcast_tkeep),
-    .m_axis_tvalid(m_mcast_tvalid), .m_axis_tlast(m_mcast_tlast),
-    .m_axis_tready(m_mcast_tready),
+    .sys_clk(clk), .sys_rst_n(rst_n),
+    .i_s_event_tdata(cam_tdata), .i_s_event_tvalid(cam_tvalid),
+    .i_s_event_tlast(cam_tlast), .o_s_event_tready(mcast_ev_ready),
+    .o_m_axis_tdata(m_mcast_tdata), .o_m_axis_tkeep(m_mcast_tkeep),
+    .o_m_axis_tvalid(m_mcast_tvalid), .o_m_axis_tlast(m_mcast_tlast),
+    .i_m_axis_tready(m_mcast_tready),
     // cfg_mcast_dst_mac kept for CSR pin compatibility; mcast_eng ignores it
     // (formal DA = RFC1112(dip)). Handshake: mcast tready is Role A (always 1).
-    .cfg_src_mac(cfg_mcast_src_mac), .cfg_dst_mac(cfg_mcast_dst_mac),
-    .cfg_src_ip(cfg_mcast_src_ip), .cfg_dst_ip(cfg_mcast_dst_ip),
-    .cfg_udp_sport(cfg_mcast_udp_sport), .cfg_udp_dport(cfg_mcast_udp_dport),
-    .cfg_ch_mask(cfg_ch_mask), .cfg_period(cfg_mcast_period),
-    .cfg_refill(cfg_mcast_refill),
-    .filt_we(filt_we), .filt_addr(filt_addr), .filt_bit(filt_bit),
-    .tx_ok(mcast_tx_c), .drop_filt(mcast_df), .drop_rate(mcast_dr),
+    .i_cfg_src_mac(cfg_mcast_src_mac), .i_cfg_dst_mac(cfg_mcast_dst_mac),
+    .i_cfg_src_ip(cfg_mcast_src_ip), .i_cfg_dst_ip(cfg_mcast_dst_ip),
+    .i_cfg_udp_sport(cfg_mcast_udp_sport), .i_cfg_udp_dport(cfg_mcast_udp_dport),
+    .i_cfg_ch_mask(cfg_ch_mask), .i_cfg_period(cfg_mcast_period),
+    .i_cfg_refill(cfg_mcast_refill),
+    .i_filt_we(filt_we), .i_filt_addr(filt_addr), .i_filt_bit(filt_bit),
+    .o_tx_ok(mcast_tx_c), .o_drop_filt(mcast_df), .o_drop_rate(mcast_dr),
     .o_drop_gate(mcast_dg), .o_nosend(mcast_ns),
     .o_stat_dst_mac(mcast_da_stat),
     .o_dbg_cs_state(mcast_dbg_cs), .o_dbg_err_sticky(mcast_dbg_sticky)
